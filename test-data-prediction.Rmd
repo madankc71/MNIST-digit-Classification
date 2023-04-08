@@ -1,0 +1,174 @@
+---
+title: "Hidden Layer 3"
+author: "Madan K C"
+date: "2023-03-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+x <- as.matrix(read.csv("~/Desktop/Machine Learning/mnist-digit-classification/data/mnist_train.csv"))
+y <- as.vector(read.csv("~/Desktop/Machine Learning/mnist-digit-classification/data/mnist_train_targets.csv")$x)
+x_test <- as.matrix(read.csv("~/Desktop/Machine Learning/mnist-digit-classification/data/mnist_test.csv"))
+```
+
+```{r}
+x <- apply(x, 2, function(y) y / 255)
+x_test <- apply(x_test, 2, function(y) y / 255)
+```
+
+
+```{r}
+y_target <- matrix(0, nrow = length(y), ncol = 10)
+
+# loop through each element of y
+for (i in seq_along(y)) {
+  
+  # set the index of the current element to 1 in the corresponding row of y_target
+  y_target[i, y[i] + 1] <- 1
+  
+}
+
+```
+
+
+# Create the matrix with zeros
+y_target <- matrix(0, nrow = 10, ncol = length(y))
+
+# Create the one-hot encoded binary vectors and add them to the matrix
+for (i in 1:length(y)) {
+  y_target[y[i] + 1, i] <- 1
+}
+
+print(y_target[,2])
+print(y[2])
+
+
+
+```{r}
+softmax <- function(z){
+  exp_z <- exp(z)
+  return(exp_z / sum(exp_z))
+}
+
+softmax_prime <- function(z) {
+  
+  s_z <- softmax(z)
+  deriv <- matrix(0, length(z), length(z))
+  
+  for(i in 1: length(s_z)) {
+    for(j in 1:length(s_z)) {
+      if(i == j) {
+        deriv[i,j] <- s_z[i] * (1 - s_z[i])
+      } else {
+        deriv[i,j] <- -s_z[i] * s_z[j]
+      }
+    }
+  }
+  return(deriv)
+}
+
+relu <- function(x){
+  x[x < 0] <- 0
+  x
+}
+
+relu_prime <- function(x) x > 0
+
+```
+
+```{r}
+predict_mlp <- function(models, x_test){
+  pred <- rep(0, ncol(x_test))
+  for(i in 1:ncol(x_test)){
+      z1 <- x_test[,i] %*% models[['w1']] + models[['b1']]
+      a1 <- relu(z1)
+      z2 <- a1 %*% models[['w2']] + models[['b2']]
+      a2 <- relu(z2)
+      z3 <- a2 %*% models[['w3']] + models[['b3']]
+      a3 <- relu(z3)
+      z4 <- a3 %*% models[['w4']] + models[['b4']]
+      pred[i] <- which.max(softmax(z4)) - 1
+  }
+  pred
+}
+```
+
+```{r}
+multilayer_perceptron <- function(x, y_target, h1, h2, h3, lr, epochs){
+  # weight and bias initialization (He initialization)
+  w1 <- matrix(rnorm(nrow(x) * h1, mean = 0, sd = sqrt(2/nrow(x))), nrow = nrow(x), ncol = h1)
+  b1 <- rnorm(h1, sd = sqrt(2/nrow(x)))
+
+  w2 <- matrix(rnorm(h1 * h2, mean = 0, sd = sqrt(2/h1)), nrow = h1, ncol = h2)
+  b2 <- rnorm(h2, sd = sqrt(2/h1))
+  
+  w3 <- matrix(rnorm(h2 * h3, mean = 0, sd = sqrt(2/h2)), nrow = h2, ncol = h3)
+  b3 <- rnorm(h3, sd = sqrt(2/h2))
+  
+  w4 <- matrix(rnorm(h3 * 10, mean = 0, sd = sqrt(2/h3)), nrow = h3, ncol = 10)
+  b4 <- rnorm(10, sd = sqrt(2/h3))
+  
+  for(epoch in 1:epochs){
+    total_error <- 0
+    for(i in 1:ncol(x)){
+      z1 <- x[, i] %*% w1 + b1
+      a1 <- relu(z1)
+      z2 <- a1 %*% w2 + b2
+      a2 <- relu(z2)
+      z3 <- a2 %*% w3 + b3
+      a3 <- relu(z3)
+      z4 <- a3 %*% w4 + b4
+      a4 <- softmax(z4)
+
+      # backpropagation
+      error <- y_target[i,] - a4
+      total_error <- total_error + sum(abs(round(error)))
+      a4_delta <- error %*% softmax_prime(a4)
+      a3_delta <- (a4_delta %*% t(w4)) * relu_prime(a3)
+      a2_delta <- (a3_delta %*% t(w3)) * relu_prime(a2)
+      a1_delta <- (a2_delta %*% t(w2)) * relu_prime(z1)
+      
+      # update weights and biases
+      w4 <- w4 + lr * t(a3) %*% a4_delta
+      b4 <- b4 + lr * a4_delta
+      w3 <- w3 + lr * t(a2) %*% a3_delta
+      b3 <- b3 + lr * a3_delta
+      w2 <- w2 + lr * t(a1) %*% a2_delta
+      b2 <- b2 + lr * a2_delta
+      w1 <- w1 + lr * x[,i] %*% a1_delta
+      b1 <- b1 + lr * a1_delta
+    }
+    accuracy <- round((1 - total_error / ncol(x)) * 100, 2)
+    cat(paste0("epoch: ", epoch, ", classification accuracy: ", accuracy, ", %\t"))
+    
+  }
+  list(w1 = w1, b1 = b1, w2 = w2, b2 = b2, w3 = w3, b3 = b3, w4 = w4, b4 = b4)
+}
+```
+
+Train one model for each digit:
+```{r}
+set.seed(123)
+models <- multilayer_perceptron(x, y_target, h1 = 512, h2 = 128, h3 = 32, lr = 0.1, epochs = 38)
+```
+
+
+```{r}
+pred_test <- predict_mlp(models, x_test)
+#pred_train <- predict_mlp(models, x)
+```
+
+```{r}
+#sum(pred_train == y)/length(pred_train)
+```
+
+
+```{r}
+df <- data.frame("Id" = 1:10000, "Expected" = pred_test)
+write.csv(df, "example_submission_softmax_valid_3h-38e-1lr.csv", row.names = FALSE)
+```
+
